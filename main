@@ -1,0 +1,204 @@
+# -*- coding: utf-8 -*-
+from Crypto.Hash import MD5
+import random, math
+
+# Списки для генерації випадкових ПІБ (Прізвище, Ім'я, По батькові)
+lastnames = ["Іванов", "Петренко", "Сидоров", "Коваленко", "Шевченко",
+             "Баранов", "Ткаченко", "Кузнєцов", "Мельник", "Новіков"]
+firstnames = ["Олександр", "Іван", "Марія", "Дмитро", "Ольга",
+              "Сергій", "Наталія", "Володимир", "Анна", "Михайло", "Глєб"]
+patronymics = ["Олександрович", "Іванович", "Сергійович", "Дмитрович",
+               "Миколайович", "Андрійович", "Петрович", "Володимирович", "Федорович", "Євгенович"]
+
+# Параметри експерименту
+runs = 100  # кількість повторень для статистики
+
+# Результати для атаки прообразу (16-бітне усічення)
+results_preimage_iterations = []
+# Змінні для зберігання даних першого запуску (демонстрація)
+first_base_name_preimage = None
+first_preimage_target_hash = None
+original_full_hash = None
+first_preimage_found_message = None
+found_hash_hex = None
+first_run_attempted_messages_preimage = []
+first_run_attempted_hashes_preimage = []
+
+# Атака пошуку прообразу (усічення MD5 до 16 біт)
+for run in range(runs):
+    # Випадкове ПІБ для кожного запуску (у першому використовується заданий приклад)
+    if run == 0:
+        base_name = "Баранов Глєб Сергійович"
+    else:
+        last = random.choice(lastnames)
+        first = random.choice(firstnames)
+        patr = random.choice(patronymics)
+        base_name = f"{last} {first} {patr}"
+    # Обчислення повного MD5 та усічення (16 біт) для початкового повідомлення
+    md5_obj = MD5.new()
+    md5_obj.update(base_name.encode('utf-8'))
+    full_hash_hex = md5_obj.hexdigest()
+    target_trunc16 = full_hash_hex[-4:]  # цільове значення (останні 4 hex-цифри)
+    if run == 0:
+        first_base_name_preimage = base_name
+        original_full_hash = full_hash_hex
+        first_preimage_target_hash = target_trunc16
+    # Пошук збігу усіченого хешу: додаємо числа до повідомлення
+    i = 1
+    attempted_messages = []
+    attempted_hashes = []
+    while True:
+        test_message = base_name + str(i)
+        md5_obj2 = MD5.new()
+        md5_obj2.update(test_message.encode('utf-8'))
+        test_hash_hex = md5_obj2.hexdigest()
+        test_trunc16 = test_hash_hex[-4:]
+        # Зберігаємо перші 30 повідомлень першого запуску для демонстрації
+        if run == 0 and i <= 30:
+            attempted_messages.append(test_message)
+            attempted_hashes.append(test_hash_hex)
+        # Перевіряємо чи усічений хеш співпадає з цільовим
+        if test_trunc16 == target_trunc16:
+            # Збіг знайдено
+            if run == 0:
+                first_preimage_found_message = test_message
+                found_hash_hex = test_hash_hex
+                first_run_attempted_messages_preimage = attempted_messages
+                first_run_attempted_hashes_preimage = attempted_hashes
+            break
+        i += 1
+    # Кількість ітерацій (додаємо у список результатів)
+    results_preimage_iterations.append(i)
+
+# Результати для атаки днів народження (32-бітне усічення)
+results_birthday_iterations = []
+# Змінні для зберігання даних першого запуску (демонстрація)
+first_base_name_bday = None
+first_run_messages_bday = []
+first_run_hashes_bday = []
+collision_pair = None
+collision_hash1 = None
+collision_hash2 = None
+
+# Атака днів народження (усічення MD5 до 32 біт)
+for run in range(runs):
+    # Випадкове інше повідомлення (у першому запуску - переставлені ПІБ)
+    if run == 0:
+        base_name2 = "Глєб Баранов Сергійович"
+    else:
+        last = random.choice(lastnames)
+        first = random.choice(firstnames)
+        patr = random.choice(patronymics)
+        base_name2 = f"{last} {first} {patr}"
+    if run == 0:
+        first_base_name_bday = base_name2
+    # Генеруємо повідомлення з доданими числами, поки не знайдемо колізію усіченого хешу
+    seen_hashes = {}  # словник для перевірки колізій (ключ - усічений хеш, значення - повідомлення)
+    j = 0
+    first30_list = []
+    first30_hashes = []
+    while True:
+        message = base_name2 + str(j)
+        md5_obj = MD5.new()
+        md5_obj.update(message.encode('utf-8'))
+        hash_hex = md5_obj.hexdigest()
+        trunc32 = hash_hex[-8:]
+        # Зберігаємо перші 30 повідомлень першого запуску
+        if run == 0 and j < 30:
+            first30_list.append(message)
+            first30_hashes.append(hash_hex)
+        # Перевірка на колізію усіченого значення
+        if trunc32 in seen_hashes:
+            # Колізія знайдена
+            if run == 0:
+                coll_msg1 = seen_hashes[trunc32]
+                coll_msg2 = message
+                # Повні MD5 для обох колізійних повідомлень
+                md5_obj1 = MD5.new(); md5_obj1.update(coll_msg1.encode('utf-8')); coll_hash1 = md5_obj1.hexdigest()
+                md5_obj2 = MD5.new(); md5_obj2.update(coll_msg2.encode('utf-8')); coll_hash2 = md5_obj2.hexdigest()
+                collision_pair = (coll_msg1, coll_msg2)
+                first_run_messages_bday = first30_list
+                first_run_hashes_bday = first30_hashes
+            break
+        else:
+            seen_hashes[trunc32] = message
+        j += 1
+    # Додаємо кількість згенерованих повідомлень до колізії (ітерації) у результати
+    results_birthday_iterations.append(j+1)
+
+# Обчислення статистик для атаки прообразу
+n = len(results_preimage_iterations)
+mean_pre = sum(results_preimage_iterations) / n
+var_pre = 0.0
+if n > 1:
+    var_pre = sum((x - mean_pre) ** 2 for x in results_preimage_iterations) / (n - 1)
+sd_pre = math.sqrt(var_pre)
+ci95_half = 1.96 * sd_pre / math.sqrt(n) if n > 1 else 0.0
+ci95_lower = mean_pre - ci95_half
+ci95_upper = mean_pre + ci95_half
+
+# Обчислення статистик для атаки днів народження
+m = len(results_birthday_iterations)
+mean_bday = sum(results_birthday_iterations) / m
+var_bday = 0.0
+if m > 1:
+    var_bday = sum((x - mean_bday) ** 2 for x in results_birthday_iterations) / (m - 1)
+sd_bday = math.sqrt(var_bday)
+ci95_half_bday = 1.96 * sd_bday / math.sqrt(m) if m > 1 else 0.0
+ci95_lower_bday = mean_bday - ci95_half_bday
+ci95_upper_bday = mean_bday + ci95_half_bday
+
+# Виведення результатів
+# 1. Атака прообразу (16 біт)
+print("Атака пошуку прообразу (MD5 усічений до 16 біт)")
+print("Перший запуск (демонстрація):")
+print(f"Вхідне повідомлення: \"{first_base_name_preimage}\"")
+print(f"MD5 = {original_full_hash} (усічений 16 біт = {first_preimage_target_hash})")
+# Перші 30 спроб
+count_attempts_print = len(first_run_attempted_messages_preimage)
+if count_attempts_print < 30:
+    print(f"Перші {count_attempts_print} спроб:")
+else:
+    print("Перші 30 спроб:")
+for k, msg in enumerate(first_run_attempted_messages_preimage, start=1):
+    hash_hex = first_run_attempted_hashes_preimage[k-1]
+    trunc_part = hash_hex[-4:]
+    print(f"{k}. {msg} -> {hash_hex} (усічений = {trunc_part})")
+# Остання (успішна) спроба
+attempt_num = results_preimage_iterations[0]
+print(f"Остання спроба №{attempt_num}: {first_preimage_found_message} -> {found_hash_hex} (усічений = {first_preimage_target_hash})")
+print()  # порожній рядок для відокремлення частин
+
+# Результати 100 запусків атаки прообразу
+print("Результати 100 запусків (атака прообразу):")
+print("Кількість ітерацій до збігу для кожного запуску:")
+print(results_preimage_iterations)
+print(f"Середнє: {mean_pre:.2f}")
+print(f"Дисперсія: {var_pre:.2f}")
+print(f"95% довірчий інтервал: [{ci95_lower:.2f}, {ci95_upper:.2f}]")
+print()
+
+# 2. Атака днів народження (32 біт)
+print("Атака днів народження (MD5 усічений до 32 біт)")
+print("Перший запуск (демонстрація):")
+print(f"Вхідне повідомлення: \"{first_base_name_bday}\"")
+print("Перші 30 повідомлень:")
+for k, msg in enumerate(first_run_messages_bday, start=1):
+    hash_hex = first_run_hashes_bday[k-1]
+    trunc_part = hash_hex[-8:]
+    print(f"{k}. {msg} -> {hash_hex} (усічений = {trunc_part})")
+# Повідомлення, які викликали колізію
+print("Колізія виявлена між повідомленнями:")
+hash_trunc = coll_hash1[-8:] if collision_pair else ""
+if collision_pair:
+    print(f"{collision_pair[0]} -> {coll_hash1} (усічений = {hash_trunc})")
+    print(f"{collision_pair[1]} -> {coll_hash2} (усічений = {hash_trunc})")
+print()
+
+# Результати 100 запусків атаки днів народження
+print("Результати 100 запусків (атака днів народження):")
+print("Кількість згенерованих повідомлень до появи колізії для кожного запуску:")
+print(results_birthday_iterations)
+print(f"Середнє: {mean_bday:.2f}")
+print(f"Дисперсія: {var_bday:.2f}")
+print(f"95% довірчий інтервал: [{ci95_lower_bday:.2f}, {ci95_upper_bday:.2f}]")
